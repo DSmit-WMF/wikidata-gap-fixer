@@ -560,6 +560,7 @@ export class SuggestionsService {
     const testLimit = this.config.get<number | null>('rules.pipelineTestLimit');
 
     const limit = testLimit !== null ? testLimit : maxBatch;
+    console.log('[pipeline] limit per type:', limit, testLimit !== null ? '(test mode)' : '');
     if (testLimit !== null) {
       this.logger.log(`Pipeline test mode: processing up to ${limit} candidate(s) per type.`);
     }
@@ -588,6 +589,11 @@ export class SuggestionsService {
         }
         seenByType[row.suggestionType]!.add(row.lexemeId);
       }
+      console.log('[pipeline] processed_lexemes by type:', {
+        NL_NOUN_PLURAL_FORM: seenByType['NL_NOUN_PLURAL_FORM']?.size ?? 0,
+        NL_VERB_FORMS: seenByType['NL_VERB_FORMS']?.size ?? 0,
+        NL_ADJECTIVE_FORMS: seenByType['NL_ADJECTIVE_FORMS']?.size ?? 0,
+      });
 
       if (features['NL_NOUN_PLURAL_FORM']) {
         this.logger.log('Running NL_NOUN_PLURAL_FORM pipeline (LLM-only)...');
@@ -601,9 +607,17 @@ export class SuggestionsService {
           limit,
           seenByType['NL_NOUN_PLURAL_FORM'],
         );
+        console.log('[pipeline] NL_NOUN_PLURAL_FORM candidates:', candidates.length);
+        if (candidates.length === 0) {
+          this.logger.log(
+            `NL_NOUN_PLURAL_FORM: 0 candidates (${seenByType['NL_NOUN_PLURAL_FORM']?.size ?? 0} already processed). Clear processed state in Danger Zone to re-scan.`,
+          );
+        }
         const phaseIndex = 0;
         const totalInPhase = Math.max(candidates.length, 1);
         this.setProgress('Noun plurals', phaseIndex, 0, totalInPhase);
+        let phaseCreated = 0;
+        let phaseSkipped = 0;
 
         for (let i = 0; i < candidates.length; i++) {
           const candidate = candidates[i];
@@ -617,6 +631,7 @@ export class SuggestionsService {
             },
           });
           if (existing) {
+            phaseSkipped++;
             skipped++;
             continue;
           }
@@ -630,6 +645,7 @@ export class SuggestionsService {
               'NL_NOUN_PLURAL_FORM',
               'no_gap',
             );
+            phaseSkipped++;
             skipped++;
             continue;
           }
@@ -642,6 +658,7 @@ export class SuggestionsService {
               'NL_NOUN_PLURAL_FORM',
               'uncountable',
             );
+            phaseSkipped++;
             skipped++;
             continue;
           }
@@ -678,6 +695,7 @@ export class SuggestionsService {
               'NL_NOUN_PLURAL_FORM',
               llmResult.decision === 'REJECT' ? 'uncountable' : 'no_gap',
             );
+            phaseSkipped++;
             skipped++;
             continue;
           }
@@ -709,6 +727,7 @@ export class SuggestionsService {
             },
           });
           if (duplicate) {
+            phaseSkipped++;
             skipped++;
             continue;
           }
@@ -718,8 +737,14 @@ export class SuggestionsService {
             'NL_NOUN_PLURAL_FORM',
             'suggestion_created',
           );
+          phaseCreated++;
           created++;
+          console.log('[pipeline] created NL_NOUN_PLURAL_FORM', candidate.lexemeId, candidate.lemma);
         }
+        console.log('[pipeline] NL_NOUN_PLURAL_FORM phase done', {
+          created: phaseCreated,
+          skipped: phaseSkipped,
+        });
       }
 
       if (features['NL_VERB_FORMS']) {
@@ -730,9 +755,17 @@ export class SuggestionsService {
           limit,
           seenByType['NL_VERB_FORMS'],
         );
+        console.log('[pipeline] NL_VERB_FORMS candidates:', candidates.length);
+        if (candidates.length === 0) {
+          this.logger.log(
+            `NL_VERB_FORMS: 0 candidates (${seenByType['NL_VERB_FORMS']?.size ?? 0} already processed). Clear processed state in Danger Zone to re-scan.`,
+          );
+        }
         const phaseIndex = 1;
         const totalInPhase = Math.max(candidates.length, 1);
         this.setProgress('Verb forms', phaseIndex, 0, totalInPhase);
+        let verbPhaseCreated = 0;
+        let verbPhaseSkipped = 0;
 
         for (let i = 0; i < candidates.length; i++) {
           const candidate = candidates[i];
@@ -745,6 +778,7 @@ export class SuggestionsService {
             },
           });
           if (existing) {
+            verbPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -752,6 +786,7 @@ export class SuggestionsService {
           const missingSlots = findMissingVerbForms(candidate.lemma, candidate.existingForms);
 
           if (missingSlots.length === 0) {
+            verbPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -805,6 +840,7 @@ export class SuggestionsService {
           // Skip if LLM couldn't fill anything useful
           const hasFillableForm = formProposals.some((f) => f.finalForm !== null);
           if (!hasFillableForm) {
+            verbPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -833,13 +869,20 @@ export class SuggestionsService {
             },
           });
           if (duplicateVerb) {
+            verbPhaseSkipped++;
             skipped++;
             continue;
           }
           await this.suggestionRepo.save(suggestion);
           await this.markLexemeProcessed(candidate.lexemeId, 'NL_VERB_FORMS', 'suggestion_created');
+          verbPhaseCreated++;
           created++;
+          console.log('[pipeline] created NL_VERB_FORMS', candidate.lexemeId, candidate.lemma);
         }
+        console.log('[pipeline] NL_VERB_FORMS phase done', {
+          created: verbPhaseCreated,
+          skipped: verbPhaseSkipped,
+        });
       }
 
       if (features['NL_ADJECTIVE_FORMS']) {
@@ -854,9 +897,17 @@ export class SuggestionsService {
           limit,
           seenByType['NL_ADJECTIVE_FORMS'],
         );
+        console.log('[pipeline] NL_ADJECTIVE_FORMS candidates:', candidates.length);
+        if (candidates.length === 0) {
+          this.logger.log(
+            `NL_ADJECTIVE_FORMS: 0 candidates (${seenByType['NL_ADJECTIVE_FORMS']?.size ?? 0} already processed). Clear processed state in Danger Zone to re-scan.`,
+          );
+        }
         const phaseIndex = 2;
         const totalInPhase = Math.max(candidates.length, 1);
         this.setProgress('Adjective forms', phaseIndex, 0, totalInPhase);
+        let adjPhaseCreated = 0;
+        let adjPhaseSkipped = 0;
 
         for (let i = 0; i < candidates.length; i++) {
           const candidate = candidates[i];
@@ -869,12 +920,14 @@ export class SuggestionsService {
             },
           });
           if (existing) {
+            adjPhaseSkipped++;
             skipped++;
             continue;
           }
 
           const gaps = detectGaps(spec, candidate.lemma, candidate.existingForms);
           if (gaps.length === 0) {
+            adjPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -923,6 +976,7 @@ export class SuggestionsService {
           const hasFillableForm = formProposals.some((f) => f.finalForm !== null);
           if (!hasFillableForm) {
             await this.markLexemeProcessed(candidate.lexemeId, 'NL_ADJECTIVE_FORMS', 'no_gap');
+            adjPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -950,6 +1004,7 @@ export class SuggestionsService {
             },
           });
           if (duplicateAdj) {
+            adjPhaseSkipped++;
             skipped++;
             continue;
           }
@@ -959,10 +1014,17 @@ export class SuggestionsService {
             'NL_ADJECTIVE_FORMS',
             'suggestion_created',
           );
+          adjPhaseCreated++;
           created++;
+          console.log('[pipeline] created NL_ADJECTIVE_FORMS', candidate.lexemeId, candidate.lemma);
         }
+        console.log('[pipeline] NL_ADJECTIVE_FORMS phase done', {
+          created: adjPhaseCreated,
+          skipped: adjPhaseSkipped,
+        });
       }
 
+      console.log('[pipeline] complete:', { created, skipped });
       this.logger.log(`Pipeline complete: ${created} created, ${skipped} skipped.`);
       return { created, skipped };
     } finally {

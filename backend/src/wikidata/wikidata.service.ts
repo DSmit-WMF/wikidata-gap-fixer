@@ -75,9 +75,9 @@ const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 500;
 const MAX_RETRIES = 4;
 /** Page size when paginating SPARQL so we can skip past already-processed lexemes. */
-const SPARQL_PAGE_SIZE = 1000;
-/** Max SPARQL pages to fetch (avoids runaway when most results are already processed). */
-const MAX_SPARQL_PAGES = 30;
+const SPARQL_PAGE_SIZE = 500;
+/** Max SPARQL pages to fetch so we can skip past a large processed set and still get fresh candidates. */
+const MAX_SPARQL_PAGES = 150;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -137,7 +137,8 @@ export class WikidataService {
   }
 
   /**
-   * Paginate SPARQL: keep requesting pages (OFFSET/LIMIT) until we have `limit` rows that are not in excludeLexemes, or we run out of results.
+   * Paginate SPARQL: request pages (OFFSET/LIMIT) until we have `limit` rows that are not in excludeLexemes, or the endpoint returns no rows.
+   * Offset is advanced by the actual number of rows returned (not by PAGE_SIZE) so we never skip results when the endpoint returns fewer than LIMIT.
    */
   private async runSparqlPaginated(
     selectWhere: string,
@@ -158,8 +159,25 @@ export class WikidataService {
         collected.push(r);
         if (collected.length >= limit) break;
       }
-      if (rows.length < SPARQL_PAGE_SIZE) break;
-      offset += SPARQL_PAGE_SIZE;
+      console.log(
+        '[sparql] page',
+        page + 1,
+        'offset:',
+        offset,
+        'rows:',
+        rows.length,
+        'filtered:',
+        filtered.length,
+        'collected:',
+        collected.length,
+        'excludeSize:',
+        excludeLexemes?.size ?? 0,
+      );
+      // Stop when the endpoint returns no rows (exhausted result set).
+      if (rows.length === 0) break;
+      // Advance by actual rows returned so we don't skip results when the endpoint
+      // returns fewer than SPARQL_PAGE_SIZE (e.g. server limit or end of result set).
+      offset += rows.length;
     }
     return collected.slice(0, limit);
   }
