@@ -1,0 +1,68 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wikidata_gap_fixer
+      POSTGRES_USER: wikidata_gap_fixer
+      POSTGRES_PASSWORD: secret
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wikidata_gap_fixer']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    ports:
+      - '3001:3001'
+    environment:
+      DATABASE_URL: postgres://wikidata_gap_fixer:secret@db:5432/wikidata_gap_fixer
+      PORT: 3001
+      FRONTEND_URL: http://localhost:3000
+      SESSION_SECRET: ${SESSION_SECRET:-dev-secret}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-nano}
+      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-1024}
+      WIKIDATA_OAUTH_CLIENT_ID: ${WIKIDATA_OAUTH_CLIENT_ID:-}
+      WIKIDATA_OAUTH_ACCESS_TOKEN: ${WIKIDATA_OAUTH_ACCESS_TOKEN:-}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      SUGGESTION_TYPE_NL_NOUN_PLURAL: ${SUGGESTION_TYPE_NL_NOUN_PLURAL:-true}
+      SUGGESTION_TYPE_NL_VERB_FORMS: ${SUGGESTION_TYPE_NL_VERB_FORMS:-true}
+      SUGGESTION_TYPE_NL_ADJECTIVE_FORMS: ${SUGGESTION_TYPE_NL_ADJECTIVE_FORMS:-true}
+      MIN_RULE_CONFIDENCE: ${MIN_RULE_CONFIDENCE:-0.7}
+      MAX_SUGGESTIONS_PER_BATCH: ${MAX_SUGGESTIONS_PER_BATCH:-200}
+      PIPELINE_TEST_MODE: ${PIPELINE_TEST_MODE:-false}
+      PIPELINE_TEST_LIMIT: ${PIPELINE_TEST_LIMIT:-1}
+    command: sh -c "npm install && npm run start:dev"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - '3000:3000'
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata_dev:
