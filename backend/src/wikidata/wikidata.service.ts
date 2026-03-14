@@ -69,11 +69,7 @@ export interface LexemeSense {
   glosses: Record<string, string>;
 }
 
-/** Item that has an English label but no Dutch label (for ITEM_LABEL_NL_FROM_EN). */
-export interface ItemLabelCandidate {
-  itemId: string;
-  englishLabel: string;
-}
+// (Item-label suggestion code removed)
 
 const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 500;
@@ -189,7 +185,15 @@ export class WikidataService {
         });
       } catch (err: unknown) {
         const status = axios.isAxiosError(err) && err.response ? err.response.status : 0;
-        const retryable = status === 429 || status >= 500;
+        const code = axios.isAxiosError(err) ? err.code : undefined;
+        const retryable =
+          status === 429 ||
+          status >= 500 ||
+          // SPARQL endpoint can be slow; treat timeouts as retryable.
+          code === 'ECONNABORTED' ||
+          code === 'ETIMEDOUT' ||
+          // DNS / transient network errors often show up with no HTTP status.
+          status === 0;
         if (!retryable || attempt === MAX_RETRIES) throw err;
         this.logger.warn(
           `HTTP ${status} — retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
@@ -394,55 +398,6 @@ SELECT DISTINCT ?lexeme ?lemma WHERE {
     return this.fetchLexemeDetailsBatched(rows, 'adjective');
   }
 
-  /**
-   * Find Wikidata items that have an English label but no Dutch label.
-   * Paginates with OFFSET so we can skip already-processed items.
-   */
-  async findItemsMissingDutchLabel(
-    limit: number,
-    excludeItemIds?: Set<string>,
-  ): Promise<ItemLabelCandidate[]> {
-    const collected: ItemLabelCandidate[] = [];
-    const seenItemIds = new Set<string>();
-    let offset = 0;
-    /** Smaller page size and longer timeout: this query is heavy on the public SPARQL endpoint. */
-    const pageSize = 100;
-    const sparqlTimeoutMs = 60000;
-    const prefix = `
-PREFIX wdt: <http://www.wikidata.org/prop/direct/>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-`.trim();
-    for (let page = 0; page < MAX_SPARQL_PAGES && collected.length < limit; page++) {
-      const query = `${prefix}
-SELECT DISTINCT ?item ?enLabel WHERE {
-  ?item wdt:P31 [] .
-  ?item rdfs:label ?enLabel .
-  FILTER(LANG(?enLabel) = "en")
-  FILTER NOT EXISTS {
-    ?item rdfs:label ?nlLabel .
-    FILTER(LANG(?nlLabel) = "nl")
-  }
-}
-ORDER BY ?item
-OFFSET ${offset}
-LIMIT ${pageSize}`;
-      const bindings = await this.runSparqlBindings(query, { timeout: sparqlTimeoutMs });
-      for (const row of bindings) {
-        const itemUri = row.item?.value;
-        const enLabel = row.enLabel?.value;
-        if (!itemUri || enLabel == null) continue;
-        const itemId = itemUri.replace('http://www.wikidata.org/entity/', '');
-        if (excludeItemIds?.has(itemId) || seenItemIds.has(itemId)) continue;
-        seenItemIds.add(itemId);
-        collected.push({ itemId, englishLabel: enLabel });
-        if (collected.length >= limit) break;
-      }
-      if (bindings.length < pageSize) break;
-      offset += pageSize;
-    }
-    return collected.slice(0, limit);
-  }
-
   async fetchLexemeDetails(lexemeId: string): Promise<{
     existingForms: ExistingForm[];
     senses: LexemeSense[];
@@ -568,51 +523,5 @@ LIMIT ${pageSize}`;
     }
   }
 
-  /**
-   * Set the label of a Wikidata item in a given language (e.g. wbsetlabel).
-   */
-  async setItemLabel(
-    itemId: string,
-    language: string,
-    value: string,
-    editSummary: string,
-    accessToken: string,
-  ): Promise<void> {
-    const apiBase = this.config.get<string>('wikidata.apiBaseUrl')!;
-    const tokenResponse: AxiosResponse<WikidataTokenResponse> = await axios.get(apiBase, {
-      params: { action: 'query', meta: 'tokens', format: 'json' },
-      headers: {
-        'User-Agent': 'WikidataGapFixer/0.1 (hackathon tool)',
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    const tokenData = tokenResponse.data as unknown as { error?: { code?: string; info?: string } };
-    if (tokenData.error) {
-      throw new Error(
-        `Wikidata API error: ${tokenData.error.info ?? tokenData.error.code ?? 'unknown'}`,
-      );
-    }
-    const csrfToken: string = tokenResponse.data.query.tokens.csrftoken ?? '';
-    const formData = new URLSearchParams();
-    formData.append('action', 'wbsetlabel');
-    formData.append('id', itemId);
-    formData.append('language', language);
-    formData.append('value', value);
-    formData.append('summary', editSummary);
-    formData.append('token', csrfToken);
-    formData.append('format', 'json');
-    const postResponse = await axios.post(apiBase, formData, {
-      headers: {
-        'User-Agent': 'WikidataGapFixer/0.1 (hackathon tool)',
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
-    const postData = postResponse.data as unknown as { error?: { code?: string; info?: string } };
-    if (postData.error) {
-      throw new Error(
-        `Wikidata wbsetlabel error: ${postData.error.info ?? postData.error.code ?? 'unknown'}`,
-      );
-    }
-  }
+  // (Item-label suggestion code removed)
 }

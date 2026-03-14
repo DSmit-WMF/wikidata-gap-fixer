@@ -299,19 +299,15 @@ export default function SuggestionsPage() {
                 <span>
                   Proposed:{' '}
                   <code className="rounded bg-muted px-1 py-0.5 text-foreground">
-                    {s.suggestionType === 'ITEM_LABEL_NL_FROM_EN'
-                      ? ((s.payload as { suggestedDutchLabel?: string }).suggestedDutchLabel ?? '—')
-                      : ((s.payload as { finalForm?: string; proposedForm?: string }).finalForm ??
-                        (s.payload as { proposedForm?: string }).proposedForm ??
-                        '—')}
+                    {(s.payload as { finalForm?: string; proposedForm?: string }).finalForm ??
+                      (s.payload as { proposedForm?: string }).proposedForm ??
+                      '—'}
                   </code>
                 </span>
                 <span>Confidence: {confidenceLabel(s.llmConfidence)}</span>
                 <a
                   href={
-                    s.suggestionType === 'ITEM_LABEL_NL_FROM_EN'
-                      ? `https://www.wikidata.org/wiki/${s.lexemeId}`
-                      : `https://www.wikidata.org/wiki/Lexeme:${s.lexemeId}`
+                    `https://www.wikidata.org/wiki/Lexeme:${s.lexemeId}`
                   }
                   target="_blank"
                   rel="noreferrer"

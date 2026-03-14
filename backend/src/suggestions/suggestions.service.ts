@@ -23,7 +23,7 @@ import { User } from '../database/entities/user.entity';
 import { WikidataService } from '../wikidata/wikidata.service';
 import { NL_CATEGORY } from '../rules/nl/expected-forms';
 
-const TOTAL_PIPELINE_PHASES = 4; // noun, verb, adjective, item label
+const TOTAL_PIPELINE_PHASES = 3; // noun, verb, adjective
 
 export interface PipelineProgress {
   phase: string;
@@ -360,7 +360,7 @@ export class SuggestionsService {
         userId,
       );
 
-      // If the lexeme has no senses and we have a Dutch gloss, add it as a sense
+      // Only add a sense when the lexeme has no senses at all; otherwise we risk duplicate senses
       const glossNl = payload.glossNl as string | undefined;
       if (glossNl?.trim()) {
         const { senses } = await this.wikidataService.fetchLexemeDetails(lexemeId);
@@ -413,15 +413,7 @@ export class SuggestionsService {
       }
     }
 
-    if (suggestion.suggestionType === 'ITEM_LABEL_NL_FROM_EN') {
-      const label =
-        (payload.finalDutchLabel as string | undefined) ??
-        (payload.suggestedDutchLabel as string | undefined);
-      if (!label) return;
-
-      const editSummary = `Add Dutch label via Wikidata Gap Fixer (from English, manually reviewed)`;
-      await this.wikidataService.setItemLabel(lexemeId, 'nl', label, editSummary, userId);
-    }
+    // (Item-label suggestion code removed)
   }
 
   /**
@@ -604,6 +596,7 @@ export class SuggestionsService {
           'NL_NOUN_PLURAL_FORM',
           10,
         );
+        const nounSpec = getExpectedFormsSpec('nl', NL_CATEGORY.noun)!;
         const candidates = await this.wikidataService.findDutchNounsMissingPlural(
           limit,
           seenByType['NL_NOUN_PLURAL_FORM'],
@@ -624,6 +617,19 @@ export class SuggestionsService {
             },
           });
           if (existing) {
+            skipped++;
+            continue;
+          }
+
+          // Skip if plural slot is already filled (e.g. form "leeuwen" exists but has no grammatical features)
+          const gaps = detectGaps(nounSpec, candidate.lemma, candidate.existingForms);
+          const hasPluralGap = gaps.some((g) => g.slot.slotId === 'plural');
+          if (!hasPluralGap) {
+            await this.markLexemeProcessed(
+              candidate.lexemeId,
+              'NL_NOUN_PLURAL_FORM',
+              'no_gap',
+            );
             skipped++;
             continue;
           }
@@ -676,6 +682,7 @@ export class SuggestionsService {
             continue;
           }
 
+          const lexemeHasNoSenses = candidate.senses.length === 0;
           const suggestion = this.suggestionRepo.create({
             lexemeId: candidate.lexemeId,
             languageCode: 'nl',
@@ -685,6 +692,8 @@ export class SuggestionsService {
               proposedForm: llmResult.finalForm,
               finalForm: llmResult.finalForm,
               glossNl: llmResult.glossNl,
+              /** True when the lexeme had no senses at suggestion time; only then do we allow adding a sense to avoid duplicates. */
+              lexemeHasNoSenses,
             },
             rationale: `LLM: ${llmResult.rationale}`,
             ruleConfidence: null,
@@ -948,79 +957,6 @@ export class SuggestionsService {
           await this.markLexemeProcessed(
             candidate.lexemeId,
             'NL_ADJECTIVE_FORMS',
-            'suggestion_created',
-          );
-          created++;
-        }
-      }
-
-      if (features['ITEM_LABEL_NL_FROM_EN']) {
-        this.logger.log('Running ITEM_LABEL_NL_FROM_EN pipeline...');
-
-        const itemLabelRejectionsForType = await this.getRejectionFeedbackForType(
-          'ITEM_LABEL_NL_FROM_EN',
-          10,
-        );
-        const itemCandidates = await this.wikidataService.findItemsMissingDutchLabel(
-          limit as number,
-          seenByType['ITEM_LABEL_NL_FROM_EN'],
-        );
-        const phaseIndex = 3;
-        const totalInPhase = Math.max(itemCandidates.length, 1);
-        this.setProgress('Item labels (NL from EN)', phaseIndex, 0, totalInPhase);
-
-        for (let i = 0; i < itemCandidates.length; i++) {
-          const candidate = itemCandidates[i];
-          this.setProgress('Item labels (NL from EN)', phaseIndex, i + 1, totalInPhase);
-
-          const existing = await this.suggestionRepo.findOne({
-            where: {
-              lexemeId: candidate.itemId,
-              suggestionType: 'ITEM_LABEL_NL_FROM_EN',
-              status: 'pending',
-            },
-          });
-          if (existing) {
-            skipped++;
-            continue;
-          }
-
-          const llmResult = await this.llmService.suggestDutchLabelFromEnglish({
-            englishLabel: candidate.englishLabel,
-            recentRejectionsForType:
-              itemLabelRejectionsForType.length > 0 ? itemLabelRejectionsForType : undefined,
-          });
-
-          const suggestion = this.suggestionRepo.create({
-            lexemeId: candidate.itemId,
-            languageCode: 'nl',
-            suggestionType: 'ITEM_LABEL_NL_FROM_EN',
-            payload: {
-              itemId: candidate.itemId,
-              englishLabel: candidate.englishLabel,
-              suggestedDutchLabel: llmResult.dutchLabel,
-            },
-            rationale: llmResult.rationale,
-            ruleConfidence: null,
-            llmConfidence: llmResult.confidence,
-            status: 'pending',
-          });
-
-          const duplicateItem = await this.suggestionRepo.findOne({
-            where: {
-              lexemeId: candidate.itemId,
-              suggestionType: 'ITEM_LABEL_NL_FROM_EN',
-              status: 'pending',
-            },
-          });
-          if (duplicateItem) {
-            skipped++;
-            continue;
-          }
-          await this.suggestionRepo.save(suggestion);
-          await this.markLexemeProcessed(
-            candidate.itemId,
-            'ITEM_LABEL_NL_FROM_EN',
             'suggestion_created',
           );
           created++;

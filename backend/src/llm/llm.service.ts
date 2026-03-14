@@ -1,6 +1,5 @@
 import {
   ADJECTIVE_FORMS_SYSTEM,
-  ITEM_LABEL_SYSTEM,
   NOUN_PLURAL_SYSTEM,
   VERB_FORMS_SYSTEM,
 } from './prompts';
@@ -33,12 +32,6 @@ export interface LlmVerbFormsResult {
   overallRationale: string;
   /** 0 when LLM was disabled or failed, otherwise average of form confidences */
   llmConfidence: number;
-}
-
-export interface LlmItemLabelResult {
-  dutchLabel: string;
-  confidence: number;
-  rationale: string;
 }
 
 /** Default options for Responses API: JSON output, low reasoning effort so the model has room for the answer. */
@@ -431,72 +424,7 @@ Provide the correct Dutch form for each slot. If the adjective is irregular or n
     }
   }
 
-  /**
-   * Suggest a Dutch label for a Wikidata item from its English label.
-   */
-  async suggestDutchLabelFromEnglish(params: {
-    englishLabel: string;
-    recentRejectionsForType?: RecentRejectionForType[];
-  }): Promise<LlmItemLabelResult> {
-    if (!this.isEnabled || !this.client) {
-      return {
-        dutchLabel: params.englishLabel,
-        confidence: 0,
-        rationale: 'LLM disabled or unavailable; using English as fallback.',
-      };
-    }
-
-    const model = this.config.get<string>('openai.model') ?? 'gpt-5-nano';
-    const maxTokens = this.config.get<number>('openai.maxOutputTokens') ?? 1024;
-
-    const userMessage = `English label: "${params.englishLabel}"
-Suggest the appropriate Dutch label for this Wikidata item.${params.recentRejectionsForType?.length ? formatRecentRejectionsForType(params.recentRejectionsForType) : ''}`;
-
-    const systemPrompt = ITEM_LABEL_SYSTEM as string;
-    console.log('============== ITEM LABEL SYSTEM PROMPT ==============');
-    console.log('\nSYSTEM PROMPT: ', systemPrompt);
-    console.log('\nUSER MESSAGE:', userMessage);
-    console.log('--------------------------------');
-    try {
-      const createResult = await this.client.responses.create({
-        model,
-        input: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        max_output_tokens: maxTokens,
-        ...DEFAULT_RESPONSE_OPTIONS,
-      });
-      const response = createResult as { output_text?: string };
-
-      console.log('\nRESPONSE:', response.output_text);
-      console.log('--------------------------------');
-      const raw = response.output_text ?? '';
-      const parsed = safeParseJson<Partial<LlmItemLabelResult>>(raw);
-      if (!parsed || typeof parsed.dutchLabel !== 'string') {
-        this.logger.warn(
-          'LLM item label returned empty or invalid JSON; using English as fallback.',
-        );
-        return {
-          dutchLabel: params.englishLabel,
-          confidence: 0,
-          rationale: 'LLM returned invalid response.',
-        };
-      }
-      return {
-        dutchLabel: parsed.dutchLabel,
-        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
-        rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
-      };
-    } catch (err) {
-      this.logger.warn(`LLM item label call failed: ${(err as Error).message}`);
-      return {
-        dutchLabel: params.englishLabel,
-        confidence: 0,
-        rationale: 'LLM call failed; using English as fallback.',
-      };
-    }
-  }
+  // (Item-label suggestion code removed)
 
   private slotFallback(
     missingSlots: Array<{ slotId: string; proposedForm: string | null }>,

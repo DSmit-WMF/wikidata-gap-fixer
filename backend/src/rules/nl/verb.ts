@@ -15,7 +15,8 @@
  *   Q110786  = singular
  *   Q146786  = plural
  *   Q22716   = imperative
- *   Q1230649 = past participle
+ *   Q1230649 = past participle (legacy)
+ *   Q12717679 = past participle (seen on Wikidata lexemes)
  */
 
 // ---------------------------------------------------------------------------
@@ -32,7 +33,10 @@ export const Q = {
   singular: 'Q110786',
   plural: 'Q146786',
   imperative: 'Q22716',
-  pastParticiple: 'Q1230649',
+  /** Past participle (seen on Wikidata lexemes, e.g. “geparkeerd”). */
+  pastParticiple: 'Q12717679',
+  /** Legacy past participle QID we still see on some lexemes. */
+  pastParticipleLegacy: 'Q1230649',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -149,6 +153,16 @@ export function findMissingVerbForms(
   const missingSlots: MissingSlot[] = [];
 
   for (const slot of DUTCH_VERB_PARADIGM) {
+    // Special case: Wikidata is inconsistent about the “past participle” feature QID.
+    // Count the slot as filled if the form has either QID.
+    if (slot.slotId === 'past_part') {
+      const hasPastPart = existingForms.some(
+        (f) =>
+          f.grammaticalFeatures.includes(Q.pastParticiple) ||
+          f.grammaticalFeatures.includes(Q.pastParticipleLegacy),
+      );
+      if (hasPastPart) continue;
+    }
     const requiredToFill = slot.fillIfFormHas ?? slot.grammaticalFeatures;
     const isFilled = existingForms.some((f) =>
       requiredToFill.every((feat) => f.grammaticalFeatures.includes(feat)),

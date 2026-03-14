@@ -14,8 +14,7 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'applied' |
 export type SuggestionType =
   | 'NL_NOUN_PLURAL_FORM'
   | 'NL_VERB_FORMS'
-  | 'NL_ADJECTIVE_FORMS'
-  | 'ITEM_LABEL_NL_FROM_EN';
+  | 'NL_ADJECTIVE_FORMS';
 
 /** One proposed form within a verb suggestion payload */
 export interface VerbFormProposal {

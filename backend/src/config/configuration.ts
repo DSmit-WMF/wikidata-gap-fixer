@@ -29,7 +29,6 @@ export const configuration = () => ({
       NL_NOUN_PLURAL_FORM: process.env.SUGGESTION_TYPE_NL_NOUN_PLURAL !== 'false',
       NL_VERB_FORMS: process.env.SUGGESTION_TYPE_NL_VERB_FORMS !== 'false',
       NL_ADJECTIVE_FORMS: process.env.SUGGESTION_TYPE_NL_ADJECTIVE_FORMS !== 'false',
-      ITEM_LABEL_NL_FROM_EN: process.env.SUGGESTION_TYPE_ITEM_LABEL_NL_FROM_EN !== 'false',
     },
   },
 

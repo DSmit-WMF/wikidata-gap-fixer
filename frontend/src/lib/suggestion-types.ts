@@ -47,13 +47,6 @@ export const LANGUAGES: LanguageDefinition[] = [
         badgeClassName:
           'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300 border-violet-200 dark:border-violet-800',
       },
-      {
-        value: 'ITEM_LABEL_NL_FROM_EN',
-        label: 'Item label',
-        description: 'Missing Dutch label derived from the English label',
-        badgeClassName:
-          'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-      },
     ],
   },
   // Add more languages here, e.g.:

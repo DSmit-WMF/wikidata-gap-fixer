@@ -114,8 +114,6 @@ export default function SuggestionDetailPage() {
   }
 
   const lemma = suggestion.payload.lemma as string | undefined;
-  const englishLabel = suggestion.payload.englishLabel as string | undefined;
-  const suggestedDutchLabel = suggestion.payload.suggestedDutchLabel as string | undefined;
   const finalForm = suggestion.payload.finalForm as string | undefined;
   const proposedForm = suggestion.payload.proposedForm as string | undefined;
   const glossNl = suggestion.payload.glossNl as string | null | undefined;
@@ -124,15 +122,16 @@ export default function SuggestionDetailPage() {
   const isFormsSuggestion =
     suggestion.suggestionType === 'NL_VERB_FORMS' ||
     suggestion.suggestionType === 'NL_ADJECTIVE_FORMS';
-  const isItemLabelSuggestion = suggestion.suggestionType === 'ITEM_LABEL_NL_FROM_EN';
+  const isNounPluralSuggestion = suggestion.suggestionType === 'NL_NOUN_PLURAL_FORM';
+  const lexemeHasNoSenses = suggestion.payload.lexemeHasNoSenses as boolean | undefined;
   const forms = suggestion.payload.forms as VerbFormProposal[] | undefined;
   const verbClass = suggestion.payload.verbClass as string | undefined;
-  const appliedFormSlotIds = (suggestion.payload as { appliedFormSlotIds?: string[] })
-    .appliedFormSlotIds ?? [];
+  const appliedFormSlotIds =
+    (suggestion.payload as { appliedFormSlotIds?: string[] }).appliedFormSlotIds ?? [];
 
-  const displayLabel = englishLabel ?? lemma ?? suggestion.lexemeId;
+  const displayLabel = lemma ?? suggestion.lexemeId;
   const currentForm =
-    editedForm !== null ? editedForm : (finalForm ?? proposedForm ?? suggestedDutchLabel ?? '');
+    editedForm !== null ? editedForm : (finalForm ?? proposedForm ?? '');
   const currentGloss = editedGloss !== null ? editedGloss : (glossNl ?? '');
 
   function getVerbFormValue(form: VerbFormProposal): string {
@@ -151,23 +150,13 @@ export default function SuggestionDetailPage() {
           ...suggestion.payload,
           forms: updatedForms,
         });
-      } else if (isItemLabelSuggestion && suggestion) {
-        const hasEdits = editedForm !== null;
-        if (hasEdits) {
-          await editAndAcceptSuggestion(id, {
-            ...suggestion.payload,
-            finalDutchLabel: currentForm || suggestedDutchLabel,
-          });
-        } else {
-          await acceptSuggestion(id);
-        }
       } else if (suggestion) {
         const hasEdits = editedForm !== null || editedGloss !== null;
         if (hasEdits) {
           await editAndAcceptSuggestion(id, {
             ...suggestion.payload,
             finalForm: currentForm,
-            glossNl: currentGloss || null,
+            glossNl: lexemeHasNoSenses ? currentGloss || null : null,
           });
         } else {
           await acceptSuggestion(id);
@@ -207,6 +196,7 @@ export default function SuggestionDetailPage() {
     try {
       await applySuggestionForm(id, slotId, valueToApply || undefined);
       toast.success('Form applied to Wikidata.');
+      await mutate();
     } catch (err) {
       console.error(err);
       toast.error('Failed to apply this form. Check your Wikidata login.');
@@ -264,14 +254,10 @@ export default function SuggestionDetailPage() {
         <div className="px-5 py-4 flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-                {isItemLabelSuggestion ? 'Item' : 'Lexeme'}
-              </p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Lexeme</p>
               <a
                 href={
-                  isItemLabelSuggestion
-                    ? `https://www.wikidata.org/wiki/${suggestion.lexemeId}`
-                    : `https://www.wikidata.org/wiki/Lexeme:${suggestion.lexemeId}`
+                  `https://www.wikidata.org/wiki/Lexeme:${suggestion.lexemeId}`
                 }
                 target="_blank"
                 rel="noreferrer"
@@ -376,16 +362,6 @@ export default function SuggestionDetailPage() {
                   ))}
                 </TableBody>
               </Table>
-            ) : isItemLabelSuggestion ? (
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-muted-foreground">English:</span>
-                <code className="rounded bg-muted px-2 py-0.5">{englishLabel ?? '—'}</code>
-                <span className="text-muted-foreground">→</span>
-                <span className="text-muted-foreground">Dutch:</span>
-                <code className="rounded bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-2 py-0.5 text-green-700 dark:text-green-400 font-semibold">
-                  {suggestedDutchLabel ?? '—'}
-                </code>
-              </div>
             ) : (
               <div className="flex items-center gap-3 text-sm">
                 <span className="text-muted-foreground line-through">— (missing form)</span>
@@ -419,15 +395,14 @@ export default function SuggestionDetailPage() {
                   <p className="text-sm font-medium mb-3">Edit before accepting (optional)</p>
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-1.5">
-                      <Label>{isItemLabelSuggestion ? 'Dutch label' : 'Form to add'}</Label>
+                      <Label>Form to add</Label>
                       <Input
                         value={currentForm}
                         onChange={(e) => setEditedForm(e.target.value)}
                         className="max-w-64 font-mono"
-                        placeholder={isItemLabelSuggestion ? suggestedDutchLabel : undefined}
                       />
                     </div>
-                    {!isItemLabelSuggestion && (
+                    {isNounPluralSuggestion && lexemeHasNoSenses && (
                       <div className="flex flex-col gap-1.5">
                         <Label>Dutch sense (optional)</Label>
                         <Input
@@ -447,8 +422,7 @@ export default function SuggestionDetailPage() {
                   onClick={handleAccept}
                   disabled={
                     submitting ||
-                    (!isFormsSuggestion && !isItemLabelSuggestion && !currentForm) ||
-                    (isItemLabelSuggestion && !currentForm && !suggestedDutchLabel)
+                    (!isFormsSuggestion && !currentForm)
                   }
                 >
                   {!isFormsSuggestion && showEditLabel ? 'Edit & Accept' : 'Accept'}
