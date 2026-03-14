@@ -359,6 +359,20 @@ export class SuggestionsService {
         editSummary,
         userId,
       );
+
+      // If the lexeme has no senses and we have a Dutch gloss, add it as a sense
+      const glossNl = payload.glossNl as string | undefined;
+      if (glossNl?.trim()) {
+        const { senses } = await this.wikidataService.fetchLexemeDetails(lexemeId);
+        if (senses.length === 0) {
+          await this.wikidataService.addLexemeSense(
+            lexemeId,
+            { [languageCode]: glossNl.trim() },
+            'Add Dutch sense/gloss via Wikidata Gap Fixer (from plural suggestion)',
+            userId,
+          );
+        }
+      }
     }
 
     if (suggestion.suggestionType === 'NL_VERB_FORMS') {
@@ -479,39 +493,36 @@ export class SuggestionsService {
   /**
    * Get recent rejection feedback for this suggestion type (any lexeme).
    * Used so the LLM can learn from past human rejections when processing similar lexemes.
+   * Returns reasonCategory and comment from suggestion_actions so the LLM gets "wrong form" etc.
    */
   async getRejectionFeedbackForType(
     suggestionType: SuggestionType,
     limit = 10,
   ): Promise<Array<{ lemma?: string; reasonCategory: string | null; comment: string | null }>> {
-    const rows = await this.actionRepo
+    const actions = await this.actionRepo
       .createQueryBuilder('a')
-      .innerJoin(Suggestion, 's', 's.id = a.suggestionId')
+      .innerJoinAndSelect('a.suggestion', 's')
       .where('s.suggestionType = :suggestionType', { suggestionType })
       .andWhere('a.action = :action', { action: 'rejected' })
       .orderBy('a.createdAt', 'DESC')
-      .limit(limit)
-      .select(['a.reasonCategory', 'a.comment'])
-      .addSelect('s.payload', 'payload')
-      .getRawMany<Record<string, unknown>>();
-    return rows.map((r) => {
-      let lemma: string | undefined;
-      try {
-        const p: unknown = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload;
-        const payload =
-          p && typeof p === 'object' ? (p as { lemma?: unknown; englishLabel?: unknown }) : null;
-        lemma =
-          typeof payload?.lemma === 'string'
-            ? payload.lemma
-            : typeof payload?.englishLabel === 'string'
-              ? payload.englishLabel
-              : undefined;
-      } catch {
-        // ignore
-      }
-      const reasonCategory = (r.a_reasonCategory ?? r.a_reason_category ?? null) as string | null;
-      const comment = (r.a_comment ?? null) as string | null;
-      return { lemma, reasonCategory, comment };
+      .take(limit)
+      .getMany();
+    return actions.map((a) => {
+      const payload = a.suggestion?.payload as
+        | { lemma?: string; englishLabel?: string }
+        | null
+        | undefined;
+      const lemma =
+        typeof payload?.lemma === 'string'
+          ? payload.lemma
+          : typeof payload?.englishLabel === 'string'
+            ? payload.englishLabel
+            : undefined;
+      return {
+        lemma,
+        reasonCategory: a.reasonCategory ?? null,
+        comment: a.comment ?? null,
+      };
     });
   }
 

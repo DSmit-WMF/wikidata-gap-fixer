@@ -46,16 +46,23 @@ export interface FormSlot {
   example: string;
   grammaticalFeatures: string[];
   requiresAblaut: boolean;
+  /**
+   * If set, a slot is considered filled when any existing form has ALL features in this set.
+   * Use when Wikidata often tags forms with only person/number (e.g. "second person, singular")
+   * and not tense (e.g. "present tense"), so we don't require every tag to be present.
+   */
+  fillIfFormHas?: string[];
 }
 
 export const DUTCH_VERB_PARADIGM: FormSlot[] = [
-  // Present tense
+  // Present tense (fillIfFormHas: person+number only, so forms tagged without "present tense" still count)
   {
     slotId: 'pres_1sg',
     label: '1st sg present (ik)',
     example: 'loop / werk',
     grammaticalFeatures: [Q.firstPerson, Q.singular, Q.presentTense],
     requiresAblaut: false,
+    fillIfFormHas: [Q.firstPerson, Q.singular],
   },
   {
     slotId: 'pres_2sg',
@@ -63,6 +70,7 @@ export const DUTCH_VERB_PARADIGM: FormSlot[] = [
     example: 'loopt / werkt',
     grammaticalFeatures: [Q.secondPerson, Q.singular, Q.presentTense],
     requiresAblaut: false,
+    fillIfFormHas: [Q.secondPerson, Q.singular],
   },
   {
     slotId: 'pres_3sg',
@@ -70,6 +78,7 @@ export const DUTCH_VERB_PARADIGM: FormSlot[] = [
     example: 'loopt / werkt',
     grammaticalFeatures: [Q.thirdPerson, Q.singular, Q.presentTense],
     requiresAblaut: false,
+    fillIfFormHas: [Q.thirdPerson, Q.singular],
   },
   {
     slotId: 'pres_pl',
@@ -77,8 +86,9 @@ export const DUTCH_VERB_PARADIGM: FormSlot[] = [
     example: 'lopen / werken',
     grammaticalFeatures: [Q.plural, Q.presentTense],
     requiresAblaut: false,
+    fillIfFormHas: [Q.plural],
   },
-  // Past tense (preterite)
+  // Past tense (preterite) – keep tense so we don't confuse with present
   {
     slotId: 'past_sg',
     label: 'singular past (ik liep / werkte)',
@@ -139,8 +149,9 @@ export function findMissingVerbForms(
   const missingSlots: MissingSlot[] = [];
 
   for (const slot of DUTCH_VERB_PARADIGM) {
+    const requiredToFill = slot.fillIfFormHas ?? slot.grammaticalFeatures;
     const isFilled = existingForms.some((f) =>
-      slot.grammaticalFeatures.every((feat) => f.grammaticalFeatures.includes(feat)),
+      requiredToFill.every((feat) => f.grammaticalFeatures.includes(feat)),
     );
     if (isFilled) continue;
 

@@ -109,12 +109,17 @@ export class WikidataService {
 
   /**
    * Run a SPARQL query and return raw bindings (for lexeme queries: lexeme, lemma).
+   * @param options.timeout - Request timeout in ms (default 30000). Use a larger value (e.g. 60000) for heavy queries.
    */
-  private async runSparqlBindings(query: string): Promise<Record<string, { value: string }>[]> {
+  private async runSparqlBindings(
+    query: string,
+    options?: { timeout?: number },
+  ): Promise<Record<string, { value: string }>[]> {
     const sparqlEndpoint = this.config.get<string>('wikidata.sparqlEndpoint')!;
     const response: AxiosResponse<SparqlResponse> = await this.getWithRetry<SparqlResponse>(
       sparqlEndpoint,
       { query, format: 'json' },
+      { timeout: options?.timeout },
     );
     return response.data.results.bindings as Record<string, { value: string }>[];
   }
@@ -165,11 +170,14 @@ export class WikidataService {
 
   /**
    * Fetch a URL with automatic retry on 429 / 5xx using exponential back-off.
+   * @param options.timeout - Request timeout in ms (default 30000).
    */
   private async getWithRetry<T>(
     url: string,
     params: Record<string, string>,
+    options?: { timeout?: number },
   ): Promise<AxiosResponse<T>> {
+    const timeoutMs = options?.timeout ?? 30000;
     const headers = this.getWikidataHeaders();
     let delay = 1000;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -177,7 +185,7 @@ export class WikidataService {
         return await axios.get<T>(url, {
           params,
           headers,
-          timeout: 30000,
+          timeout: timeoutMs,
         });
       } catch (err: unknown) {
         const status = axios.isAxiosError(err) && err.response ? err.response.status : 0;
@@ -397,7 +405,9 @@ SELECT DISTINCT ?lexeme ?lemma WHERE {
     const collected: ItemLabelCandidate[] = [];
     const seenItemIds = new Set<string>();
     let offset = 0;
-    const pageSize = 500;
+    /** Smaller page size and longer timeout: this query is heavy on the public SPARQL endpoint. */
+    const pageSize = 100;
+    const sparqlTimeoutMs = 60000;
     const prefix = `
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -416,7 +426,7 @@ SELECT DISTINCT ?item ?enLabel WHERE {
 ORDER BY ?item
 OFFSET ${offset}
 LIMIT ${pageSize}`;
-      const bindings = await this.runSparqlBindings(query);
+      const bindings = await this.runSparqlBindings(query, { timeout: sparqlTimeoutMs });
       for (const row of bindings) {
         const itemUri = row.item?.value;
         const enLabel = row.enLabel?.value;
@@ -501,6 +511,59 @@ LIMIT ${pageSize}`;
     if (postData.error) {
       throw new Error(
         `Wikidata wbladdform error: ${postData.error.info ?? postData.error.code ?? 'unknown'}`,
+      );
+    }
+  }
+
+  /**
+   * Add a sense with glosses to a lexeme (wbladdsense).
+   * Use when the lexeme has no senses and we have a suggested gloss (e.g. from noun plural flow).
+   */
+  async addLexemeSense(
+    lexemeId: string,
+    glosses: Record<string, string>,
+    editSummary: string,
+    accessToken: string,
+  ): Promise<void> {
+    const apiBase = this.config.get<string>('wikidata.apiBaseUrl')!;
+    const tokenResponse: AxiosResponse<WikidataTokenResponse> = await axios.get(apiBase, {
+      params: { action: 'query', meta: 'tokens', format: 'json' },
+      headers: {
+        'User-Agent': 'WikidataGapFixer/0.1 (hackathon tool)',
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const tokenData = tokenResponse.data as unknown as { error?: { code?: string; info?: string } };
+    if (tokenData.error) {
+      throw new Error(
+        `Wikidata API error: ${tokenData.error.info ?? tokenData.error.code ?? 'unknown'}`,
+      );
+    }
+    const csrfToken: string = tokenResponse.data.query.tokens.csrftoken ?? '';
+    const glossesData = Object.fromEntries(
+      Object.entries(glosses).map(([lang, value]) => [
+        lang,
+        { language: lang, value },
+      ]),
+    );
+    const formData = new URLSearchParams();
+    formData.append('action', 'wbladdsense');
+    formData.append('lexemeId', lexemeId);
+    formData.append('data', JSON.stringify({ glosses: glossesData }));
+    formData.append('summary', editSummary);
+    formData.append('token', csrfToken);
+    formData.append('format', 'json');
+    const postResponse = await axios.post(apiBase, formData, {
+      headers: {
+        'User-Agent': 'WikidataGapFixer/0.1 (hackathon tool)',
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+    const postData = postResponse.data as unknown as { error?: { code?: string; info?: string } };
+    if (postData.error) {
+      throw new Error(
+        `Wikidata wbladdsense error: ${postData.error.info ?? postData.error.code ?? 'unknown'}`,
       );
     }
   }

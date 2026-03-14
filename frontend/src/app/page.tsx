@@ -10,7 +10,7 @@ export default function HomePage() {
       <section className="flex flex-col gap-4 pt-8">
         <h1 className="text-4xl font-bold tracking-tight">Wikidata Gap Fixer</h1>
         <p className="max-w-2xl text-lg text-muted-foreground">
-          AI-assisted suggestions for missing morphological forms and glosses in Wikidata lexemes.
+          AI-assisted suggestions for missing morphological forms and senses in Wikidata lexemes.
           Every suggestion requires a human to accept, edit, or reject it before anything is written
           to Wikidata.
         </p>

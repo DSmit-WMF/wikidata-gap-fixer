@@ -429,7 +429,7 @@ export default function SuggestionDetailPage() {
                     </div>
                     {!isItemLabelSuggestion && (
                       <div className="flex flex-col gap-1.5">
-                        <Label>Dutch gloss (optional)</Label>
+                        <Label>Dutch sense (optional)</Label>
                         <Input
                           value={currentGloss}
                           onChange={(e) => setEditedGloss(e.target.value)}

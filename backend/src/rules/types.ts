@@ -20,6 +20,11 @@ export interface FormSlot {
   label: string;
   /** Wikidata QIDs that together identify this form */
   grammaticalFeatures: string[];
+  /**
+   * If set, used instead of grammaticalFeatures match to decide if this slot is filled.
+   * Use when forms can exist without all tags (e.g. plural form present but untagged).
+   */
+  isFilled?: (form: ExistingForm, lemma: string, language: string) => boolean;
 }
 
 /** Result returned by a SlotDeriver for one slot. */

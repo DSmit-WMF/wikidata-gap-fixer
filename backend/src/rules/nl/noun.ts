@@ -19,6 +19,15 @@ export const DUTCH_NOUN_SLOTS: FormSlot[] = [
     slotId: 'plural',
     label: 'plural',
     grammaticalFeatures: [GRAMMATICAL_FEATURES.plural],
+    // Plural slot is also filled if a form exists with no grammatical features but rep !== lemma
+    // (e.g. "klachten" already on Wikidata but untagged — we don't suggest adding it again)
+    isFilled: (form, lemma, language) => {
+      const rep = form.representations?.[language];
+      return (
+        form.grammaticalFeatures.includes(GRAMMATICAL_FEATURES.plural) ||
+        (form.grammaticalFeatures.length === 0 && rep != null && rep !== lemma)
+      );
+    },
   },
 ];
 

@@ -21,9 +21,11 @@ export function detectGaps(
   const gaps: FormGap[] = [];
 
   for (const slot of spec.slots) {
-    const isFilled = existingForms.some((form) =>
-      slot.grammaticalFeatures.every((feat) => form.grammaticalFeatures.includes(feat)),
-    );
+    const isFilled = slot.isFilled
+      ? existingForms.some((form) => slot.isFilled!(form, lemma, spec.language))
+      : existingForms.some((form) =>
+          slot.grammaticalFeatures.every((feat) => form.grammaticalFeatures.includes(feat)),
+        );
     if (isFilled) continue;
 
     const result = spec.derive(slot, lemma, existingForms);
